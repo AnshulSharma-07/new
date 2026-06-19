@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apex Robot Mission Control v3</title>
+    <script src="https://cdn.jsdelivr.net/npm/roslib@1/build/roslib.min.js"></script>
+    <style>
+        :root {
+            --bg-gradient: linear-gradient(135deg, #0f0f12 0%, #15151e 100%);
+            --bg-card: rgba(30, 30, 40, 0.6);
+            --accent-cyan: #00f2fe;
+            --accent-blue: #4facfe;
+            --stop-red: #ff3366;
+            --text-main: #f5f5fa;
+            --text-muted: #8e8e9f;
+            --status-connected: #00ff87;
+            --status-disconnected: #ff3366;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            user-select: none;
+        }
+
+        body {
+            background: var(--bg-gradient);
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .dashboard {
+            width: 100%;
+            max-width: 460px;
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 800;
+            background: linear-gradient(to right, var(--accent-cyan), var(--accent-blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 4px;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+        }
+
+        .network-panel {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 16px;
+            padding: 14px;
+            margin-bottom: 20px;
+        }
+
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .panel-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 4px 12px;
+            border-radius: 20px;
+            background: rgba(255, 51, 102, 0.1);
+            color: var(--status-disconnected);
+        }
+
+        .status-badge.connected {
+            background: rgba(0, 255, 135, 0.1);
+            color: var(--status-connected);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: currentColor;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 10px 14px;
+            color: white;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .connect-btn {
+            background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-cyan) 100%);
+            color: #0f0f12;
+            border: none;
+            border-radius: 10px;
+            padding: 0 18px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        /* NEW: Live Camera Viewport Styles */
+        .camera-container {
+            width: 100%;
+            aspect-ratio: 4/3;
+            background: #050508;
+            border-radius: 16px;
+            margin-bottom: 20px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .camera-stream {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: none;
+        }
+
+        .camera-placeholder {
+            color: var(--text-muted);
+            font-size: 13px;
+            font-weight: 500;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .dpad-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            max-width: 240px;
+            margin: 0 auto 20px auto;
+        }
+
+        .dpad-btn {
+            aspect-ratio: 1;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: var(--text-main);
+            font-size: 20px;
+            border-radius: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.1s ease;
+        }
+
+        .dpad-btn:active, .dpad-btn.active {
+            background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-cyan) 100%);
+            color: #0f0f12;
+            border-color: transparent;
+            box-shadow: 0 0 15px rgba(0, 242, 254, 0.4);
+        }
+
+        .dpad-btn.stop-core {
+            background: rgba(255, 51, 102, 0.1);
+            border-color: rgba(255, 51, 102, 0.3);
+            color: var(--stop-red);
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .dpad-btn.stop-core:active {
+            background: var(--stop-red);
+            color: white;
+        }
+
+        .hide { visibility: hidden; }
+
+        .speed-panel {
+            background: rgba(0, 0, 0, 0.15);
+            padding: 14px;
+            border-radius: 16px;
+            margin-bottom: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .slider-container {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .slider-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .slider-label { color: var(--text-muted); }
+        .slider-value { color: var(--accent-cyan); font-family: monospace; }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+            cursor: pointer;
+        }
+
+        .telemetry-deck {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            background: rgba(0, 0, 0, 0.25);
+            padding: 10px;
+            border-radius: 12px;
+        }
+
+        .telemetry-card {
+            background: rgba(255, 255, 255, 0.01);
+            padding: 6px;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .tel-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+
+        .tel-value {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-main);
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard">
+        <header>
+            <h1>APEX COMMAND</h1>
+            <div class="subtitle">ROS 2 Teleoperation Matrix</div>
+        </header>
+
+        <div class="network-panel">
+            <div class="status-row">
+                <span class="panel-label">System Feed</span>
+                <div id="status-badge" class="status-badge">
+                    <span class="status-dot"></span>
+                    <span id="status-text">OFFLINE</span>
+                </div>
+            </div>
+            <div class="input-group">
+                <input type="text" id="robot-ip" value="localhost" placeholder="Robot Core IP Target">
+                <button class="connect-btn" onclick="connectToRobot()">LINK</button>
+            </div>
+        </div>
+
+        <div class="camera-container">
+            <div id="cam-placeholder" class="camera-placeholder">
+                <span>📷 VIDEO FEED OFFLINE</span>
+            </div>
+            <img id="webcam-feed" class="camera-stream" alt="Robot Live Stream">
+        </div>
+
+        <div class="dpad-container">
+            <div class="hide"></div>
+            <button class="dpad-btn" id="btn-up">▲</button>
+            <div class="hide"></div>
+
+            <button class="dpad-btn" id="btn-left">◀</button>
+            <button class="dpad-btn stop-core" id="btn-stop">STOP</button>
+            <button class="dpad-btn" id="btn-right">▶</button>
+
+            <div class="hide"></div>
+            <button class="dpad-btn" id="btn-down">▼</button>
+            <div class="hide"></div>
+        </div>
+
+        <div class="speed-panel">
+            <div class="slider-container">
+                <div class="slider-header">
+                    <span class="slider-label">Linear Speed Cap</span>
+                    <span class="slider-value" id="linear-lbl">0.5 m/s</span>
+                </div>
+                <input type="range" id="slider-linear" min="0.1" max="1.5" step="0.1" value="0.5">
+            </div>
+            <div class="slider-container">
+                <div class="slider-header">
+                    <span class="slider-label">Angular Speed Cap</span>
+                    <span class="slider-value" id="angular-lbl">0.5 rad/s</span>
+                </div>
+                <input type="range" id="slider-angular" min="0.1" max="1.5" step="0.1" value="0.5">
+            </div>
+        </div>
+
+        <div class="telemetry-deck">
+            <div class="telemetry-card">
+                <div class="tel-label">Active Linear</div>
+                <div class="tel-value" id="active-linear">0.0 m/s</div>
+            </div>
+            <div class="telemetry-card">
+                <div class="tel-label">Active Angular</div>
+                <div class="tel-value" id="active-angular">0.0 rad/s</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let linearSpeed = 0.5;
+        let angularTurn = 0.5;
+        let activeLinear = 0.0;
+        let activeAngular = 0.0;
+
+        let ros = null;
+        let cmdVel = null;
+        let intervalId = null;
+
+        const badge = document.getElementById('status-badge');
+        const statusText = document.getElementById('status-text');
+        
+        const linearSlider = document.getElementById('slider-linear');
+        const angularSlider = document.getElementById('slider-angular');
+        const linearSliderLabel = document.getElementById('linear-lbl');
+        const angularSliderLabel = document.getElementById('angular-lbl');
+        
+        const activeLinearDisplay = document.getElementById('active-linear');
+        const activeAngularDisplay = document.getElementById('active-angular');
+
+        const webcamFeed = document.getElementById('webcam-feed');
+        const camPlaceholder = document.getElementById('cam-placeholder');
+
+        linearSlider.addEventListener('input', (e) => {
+            linearSpeed = parseFloat(e.target.value);
+            linearSliderLabel.innerText = linearSpeed.toFixed(1) + " m/s";
+        });
+
+        angularSlider.addEventListener('input', (e) => {
+            angularTurn = parseFloat(e.target.value);
+            angularSliderLabel.innerText = angularTurn.toFixed(1) + " rad/s";
+        });
+
+        function updateTelemetryDisplay() {
+            activeLinearDisplay.innerText = activeLinear.toFixed(1) + " m/s";
+            activeAngularDisplay.innerText = activeAngular.toFixed(1) + " rad/s";
+        }
+
+        function connectToRobot() {
+            const targetIp = document.getElementById('robot-ip').value.trim();
+            if (ros) { try { ros.close(); } catch(e) {} }
+
+            statusText.innerText = "LINKING...";
+            badge.className = "status-badge";
+
+            ros = new ROSLIB.Ros({ url: 'ws://' + targetIp + ':9090' });
+
+            ros.on('connection', () => {
+                statusText.innerText = "ONLINE";
+                badge.className = "status-badge connected";
+                
+                // Dynamically route the MJPEG camera video source URL to the image tag
+                webcamFeed.src = 'http://' + targetIp + ':8080/stream?topic=/image_raw&type=mjpeg&quality=50';
+                webcamFeed.style.display = 'block';
+                camPlaceholder.style.display = 'none';
+
+                cmdVel = new ROSLIB.Topic({
+                    ros: ros,
+                    name: '/cmd_vel',
+                    messageType: 'geometry_msgs/Twist'
+                });
+            });
+
+            ros.on('error', () => {
+                statusText.innerText = "ERR_LINK";
+                badge.className = "status-badge";
+                resetCameraDisplay();
+            });
+
+            ros.on('close', () => {
+                statusText.innerText = "OFFLINE";
+                badge.className = "status-badge";
+                resetCameraDisplay();
+                stopMove();
+            });
+        }
+
+        function resetCameraDisplay() {
+            webcamFeed.src = '';
+            webcamFeed.style.display = 'none';
+            camPlaceholder.style.display = 'flex';
+        }
+
+        function sendTwist(lx, az) {
+            if (!cmdVel) return;
+            activeLinear = lx;
+            activeAngular = az;
+            updateTelemetryDisplay();
+
+            const twist = new ROSLIB.Message({
+                linear: { x: parseFloat(lx), y: 0.0, z: 0.0 },
+                angular: { x: 0.0, y: 0.0, z: parseFloat(az) }
+            });
+            cmdVel.publish(twist);
+        }
+
+        function startMove(lx, az) {
+            if (intervalId !== null) clearInterval(intervalId);
+            sendTwist(lx, az);
+            intervalId = setInterval(() => sendTwist(lx, az), 40);
+        }
+
+        function stopMove() {
+            if (intervalId !== null) { clearInterval(intervalId); intervalId = null; }
+            sendTwist(0, 0);
+            document.querySelectorAll('.dpad-btn').forEach(b => b.classList.remove('active'));
+        }
+
+        function setupButton(elementId, lx_mult, az_mult) {
+            const btn = document.getElementById(elementId);
+            if(!btn) return;
+            
+            btn.addEventListener('mousedown', () => startMove(linearSpeed * lx_mult, angularTurn * az_mult));
+            btn.addEventListener('mouseup', stopMove);
+            btn.addEventListener('mouseleave', stopMove);
+
+            btn.addEventListener('touchstart', (e) => { 
+                e.preventDefault(); 
+                startMove(linearSpeed * lx_mult, angularTurn * az_mult); 
+            });
+            btn.addEventListener('touchend', (e) => { 
+                e.preventDefault(); 
+                stopMove(); 
+            });
+        }
+
+        setupButton('btn-up', 1, 0);
+        setupButton('btn-down', -1, 0);
+        setupButton('btn-left', 0, 1);
+        setupButton('btn-right', 0, -1);
+
+        const stopBtn = document.getElementById('btn-stop');
+        if(stopBtn) {
+            stopBtn.addEventListener('mousedown', stopMove);
+            stopBtn.addEventListener('touchstart', (e) => { e.preventDefault(); stopMove(); });
+        }
+
+        const arrowKeyMap = {
+            'arrowup': 'btn-up',
+            'arrowdown': 'btn-down',
+            'arrowleft': 'btn-left',
+            'arrowright': 'btn-right'
+        };
+
+        window.addEventListener('keydown', (e) => {
+            const keyLower = e.key.toLowerCase();
+            
+            if (arrowKeyMap[keyLower]) {
+                e.preventDefault();
+                if (e.repeat) return;
+                const btnId = arrowKeyMap[keyLower];
+                const targetBtn = document.getElementById(btnId);
+                if(targetBtn) targetBtn.classList.add('active');
+                
+                if (keyLower === 'arrowup') startMove(linearSpeed, 0);
+                if (keyLower === 'arrowdown') startMove(-linearSpeed, 0);
+                if (keyLower === 'arrowleft') startMove(0, angularTurn);
+                if (keyLower === 'arrowright') startMove(0, -angularTurn);
+            }
+
+            if (e.repeat) return;
+            if (keyLower === 'i') { linearSpeed = Math.min(linearSpeed + 0.1, 1.5); linearSlider.value = linearSpeed; linearSliderLabel.innerText = linearSpeed.toFixed(1) + " m/s"; }
+            if (keyLower === 'k') { linearSpeed = Math.max(linearSpeed - 0.1, 0.1); linearSlider.value = linearSpeed; linearSliderLabel.innerText = linearSpeed.toFixed(1) + " m/s"; }
+            if (keyLower === 'l') { angularTurn = Math.min(angularTurn + 0.1, 1.5); angularSlider.value = angularTurn; angularSliderLabel.innerText = angularTurn.toFixed(1) + " rad/s"; }
+            if (keyLower === 'j') { angularTurn = Math.max(angularTurn - 0.1, 0.1); angularSlider.value = angularTurn; angularSliderLabel.innerText = angularTurn.toFixed(1) + " rad/s"; }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const keyLower = e.key.toLowerCase();
+            if (arrowKeyMap[keyLower]) {
+                stopMove();
+            }
+        });
+
+        updateTelemetryDisplay();
+        connectToRobot();
+    </script>
+</body>
+</html>
